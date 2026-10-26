@@ -1,0 +1,14 @@
+[build]
+  base = "voiceqa"
+  command = "npm run build"
+  publish = "dist"
+
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
+
+# Client-side routing fallback for React Single Page App
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
