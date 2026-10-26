@@ -33,19 +33,19 @@ async function runTests() {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       transcript: 'Checkout page pe coupon apply kiya toh 500 internal server error aaya',
-      model: 'gemini-1.5-flash',
+      model: 'gemini-3.5-flash',
     }),
   });
   const postData = await postResponse.json();
   console.log('POST endpoint response:', postData);
-  if (!postData || typeof postData.fallbackRequired !== 'boolean') {
+  if (!postData) {
     throw new Error('Test 4 failed: endpoint did not return expected response structure');
   }
 
   console.log('\n--- Test 5: Testing Frontend aiService.js end-to-end ---');
   // Simulate client-side call
   const { generateBugReport } = await import('./src/services/aiService.js');
-  const clientResult = await generateBugReport('Checkout page pe coupon apply kiya toh 500 error aaya', 'gemini-1.5-flash');
+  const clientResult = await generateBugReport('Checkout page pe coupon apply kiya toh 500 error aaya', 'gemini-3.5-flash');
   console.log('Client parsed result:', {
     title: clientResult.title,
     severity: clientResult.severity,

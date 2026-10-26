@@ -99,10 +99,10 @@ export default function App() {
     setIsSaved(false);
 
     try {
-      const generated = await generateBugReport(transcript, settings.model || 'gemini-1.5-flash');
+      const generated = await generateBugReport(transcript, settings.model || 'gemini-3.5-flash');
       setReport(generated);
       if (generated._source === 'ai') {
-        showToast(`✨ Generated with Gemini AI (${generated._model || '1.5 Flash'})!`);
+        showToast(`✨ Generated with Gemini AI (${generated._model || '3.5 Flash'})!`);
       } else {
         showToast('⚡ Generated with Smart Fallback Engine (Backend API key not configured)');
       }

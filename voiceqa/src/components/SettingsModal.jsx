@@ -8,7 +8,7 @@ export default function SettingsModal({
   settings,
   onSaveSettings,
 }) {
-  const [model, setModel] = useState(settings?.model || 'gemini-1.5-flash');
+  const [model, setModel] = useState(settings?.model || 'gemini-3.5-flash');
   const [language, setLanguage] = useState(settings?.language || 'en-IN');
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [backendStatus, setBackendStatus] = useState(null);
@@ -136,9 +136,10 @@ export default function SettingsModal({
               value={model}
               onChange={(e) => setModel(e.target.value)}
             >
-              <option value="gemini-1.5-flash">Gemini 1.5 Flash (Fast, Free Tier, Recommended)</option>
-              <option value="gemini-2.0-flash">Gemini 2.0 Flash (Latest Next-Gen Generation)</option>
-              <option value="gemini-1.5-pro">Gemini 1.5 Pro (Deep Reasoning for Complex Cases)</option>
+              <option value="gemini-3.5-flash">Gemini 3.5 Flash (Verified, Active, Free Tier — Recommended)</option>
+              <option value="gemini-3.5-flash-lite">Gemini 3.5 Flash Lite (Ultra-Fast Response)</option>
+              <option value="gemini-3.8-flash">Gemini 3.8 Flash (Latest Preview)</option>
+              <option value="gemini-pro-latest">Gemini Pro Latest (Complex Multi-Step Logic)</option>
             </select>
             <span className="field-hint">
               Free API keys with generous limits can be obtained at <a href="https://aistudio.google.com/" target="_blank" rel="noreferrer" className="link-text">Google AI Studio</a>.

@@ -13,8 +13,8 @@ export async function checkBackendAIStatus() {
     return {
       online: true,
       aiConfigured: Boolean(data.aiConfigured),
-      defaultModel: data.defaultModel || 'gemini-1.5-flash',
-      availableModels: data.availableModels || ['gemini-1.5-flash', 'gemini-2.0-flash'],
+      defaultModel: data.defaultModel || 'gemini-3.5-flash',
+      availableModels: data.availableModels || ['gemini-3.5-flash', 'gemini-3.5-flash-lite'],
     };
   } catch (err) {
     console.warn('Backend ping failed:', err);
@@ -22,7 +22,7 @@ export async function checkBackendAIStatus() {
   }
 }
 
-export async function generateBugReport(transcript, selectedModel = 'gemini-1.5-flash') {
+export async function generateBugReport(transcript, selectedModel = 'gemini-3.5-flash') {
   const cleanTranscript = (transcript || '').trim();
   if (!cleanTranscript) {
     throw new Error('Please provide or dictate a bug description first.');

@@ -3,10 +3,10 @@
 
 const SYSTEM_PROMPT = `You are a Principal QA Architect and Senior Software Engineer.
 Your task is to analyze a developer's voice transcript describing a software bug, regression, or glitch.
-The transcript may be in plain English, Hinglish (a natural blend of Hindi and English like "Checkout page pe apply coupon click karne ke baad 500 error aa gaya aur blank screen ho gayi"), or colloquial developer jargon.
+The transcript may be in plain English, Hinglish (a natural blend of Hindi and English like "Login करने के बाद dashboard पे refresh करती हूँ तो session expire हो जाता है और मुझे वापस login page पे भेज देता है"), or colloquial developer jargon.
 
 Your instructions:
-1. Understand the core issue, user intent, user actions, and error states described in English or Hinglish.
+1. Understand the core issue, user intent, user actions, and error states described in English, Hindi, or Hinglish.
 2. Translate all details into clean, formal, professional technical English.
 3. Structure the output strictly conforming to standard QA bug tracking and test engineering practices.
 4. Generate a production-ready Playwright (TypeScript/JavaScript) test script that reproduces and asserts this scenario.
@@ -14,18 +14,19 @@ Your instructions:
 You MUST respond strictly with valid JSON without any markdown formatting or code fences.
 Output JSON Schema:
 {
-  "title": "Concise, professional bug title in English (e.g. 'Checkout: HTTP 500 error when applying coupon')",
+  "title": "Concise, professional bug title in English (e.g. 'Authentication: Session expires and redirects to login on dashboard page refresh')",
   "severity": "Low" | "Medium" | "High" | "Critical",
-  "component": "Component or module name (e.g. 'Authentication', 'Checkout', 'UI Navigation', 'User Profile', 'Payments', 'API')",
-  "description": "Clear professional summary in English explaining what happened, why it is a defect, and its impact on the system",
+  "component": "Component or module name (e.g. 'Authentication', 'Session Management', 'Dashboard', 'Checkout', 'UI Navigation')",
+  "description": "Clear professional summary in English detailing what happened, why it is a defect, and its impact on the system",
   "stepsToReproduce": [
-    "1. Navigate to...",
-    "2. Enter...",
-    "3. Click...",
-    "4. Observe..."
+    "1. Navigate to login page...",
+    "2. Enter valid user credentials and log in...",
+    "3. Navigate to user dashboard...",
+    "4. Refresh the page / trigger browser reload...",
+    "5. Observe unexpected session invalidation and redirection to login"
   ],
-  "expectedResult": "Expected system behavior according to functional specifications",
-  "actualResult": "Observed buggy behavior, crashes, unhandled exceptions, or corrupted state",
+  "expectedResult": "User session remains persistent on page refresh and dashboard content reloads smoothly",
+  "actualResult": "Session immediately expires upon reload and user is forcefully kicked back to login page",
   "testCase": {
     "id": "TC-[MODULE]-[3DIGIT]",
     "title": "Formal regression test case title",
@@ -33,7 +34,7 @@ Output JSON Schema:
     "testSteps": [
       "1. Navigate to target URL",
       "2. Perform specified action",
-      "3. Trigger submission",
+      "3. Trigger reload / action",
       "4. Assert expected behavior"
     ],
     "expectedOutcome": "Definitive pass/fail assertion criteria",
@@ -42,19 +43,25 @@ Output JSON Schema:
 }
 
 Severity Guidelines:
-- Critical: Application crash, 500 server error, fatal unhandled exception, security flaw, data loss, blank/white screen.
-- High: Core workflow broken (login blocked, cannot checkout, data failing to save), severe functional defect.
+- Critical: Application crash, 500 server error, fatal unhandled exception, security flaw, data loss, session termination loop.
+- High: Core workflow broken (login blocked, cannot checkout, persistent session failing on refresh), severe functional defect.
 - Medium: Non-blocking functional bug, incorrect validation message, UI state glitch with available workaround.
 - Low: Minor cosmetic defect, alignment, typography, slow animation, styling glitch.`;
 
-// Supported Gemini models
-const ALLOWED_MODELS = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
+// Supported active Gemini models verified via Google AI Studio API
+export const DEFAULT_MODEL = 'gemini-3.5-flash';
+export const ALLOWED_MODELS = [
+  'gemini-3.5-flash',
+  'gemini-3.5-flash-lite',
+  'gemini-3.8-flash',
+  'gemini-pro-latest',
+];
 
 export async function processReportGeneration(payload, apiKeyOverride) {
   const apiKey = apiKeyOverride || process.env.GEMINI_API_KEY;
   const transcript = (payload.transcript || '').trim();
-  const requestedModel = payload.model || 'gemini-1.5-flash';
-  const model = ALLOWED_MODELS.includes(requestedModel) ? requestedModel : 'gemini-1.5-flash';
+  const requestedModel = payload.model || DEFAULT_MODEL;
+  const primaryModel = ALLOWED_MODELS.includes(requestedModel) ? requestedModel : DEFAULT_MODEL;
 
   if (!transcript) {
     return {
@@ -75,81 +82,91 @@ export async function processReportGeneration(payload, apiKeyOverride) {
     };
   }
 
-  try {
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey.trim()}`;
+  // Try primary model first, with automatic fallback across allowed models if 503/404 occurs
+  const candidateModels = [primaryModel, ...ALLOWED_MODELS.filter((m) => m !== primaryModel)];
+  let lastErrorMessage = '';
 
-    const requestPayload = {
-      contents: [
-        {
-          role: 'user',
-          parts: [
-            { text: SYSTEM_PROMPT },
-            { text: `Developer Spoken Input:\n"${transcript}"` },
-          ],
+  for (const modelToTry of candidateModels) {
+    try {
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelToTry}:generateContent?key=${apiKey.trim()}`;
+
+      const requestPayload = {
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              { text: SYSTEM_PROMPT },
+              { text: `Developer Spoken Input:\n"${transcript}"` },
+            ],
+          },
+        ],
+        generationConfig: {
+          temperature: 0.2,
+          responseMimeType: 'application/json',
         },
-      ],
-      generationConfig: {
-        temperature: 0.2,
-        responseMimeType: 'application/json',
-      },
-    };
+      };
 
-    const res = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(requestPayload),
-    });
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestPayload),
+      });
 
-    if (!res.ok) {
-      const errJson = await res.json().catch(() => ({}));
-      const message = errJson.error?.message || `Gemini API returned status ${res.status}`;
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        const message = errJson.error?.message || `Gemini API returned status ${res.status}`;
+        lastErrorMessage = message;
+        console.warn(`Model ${modelToTry} attempt failed (${res.status}): ${message}. Trying next candidate...`);
+        // If 503 (high demand) or 404 (model not found), continue loop to next model
+        if (res.status === 503 || res.status === 404) {
+          continue;
+        }
+        // For other fatal errors (e.g. invalid key 400/403), stop
+        return {
+          status: 200,
+          body: {
+            success: false,
+            fallbackRequired: true,
+            error: `AI Provider Error: ${message}`,
+          },
+        };
+      }
+
+      const data = await res.json();
+      const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+
+      if (!rawText) {
+        lastErrorMessage = 'Received empty response from AI model.';
+        continue;
+      }
+
+      // Clean and validate the JSON
+      const parsed = cleanAndParseJSON(rawText);
+      const validated = validateAndSanitizeReport(parsed, transcript);
+
       return {
         status: 200,
         body: {
-          success: false,
-          fallbackRequired: true,
-          error: `AI Provider Error: ${message}`,
+          success: true,
+          data: validated,
+          modelUsed: modelToTry,
         },
       };
+    } catch (err) {
+      console.warn(`Exception calling ${modelToTry}:`, err.message);
+      lastErrorMessage = err.message;
     }
-
-    const data = await res.json();
-    const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text;
-
-    if (!rawText) {
-      return {
-        status: 200,
-        body: {
-          success: false,
-          fallbackRequired: true,
-          error: 'Received empty response from AI model.',
-        },
-      };
-    }
-
-    // Clean and validate the JSON
-    const parsed = cleanAndParseJSON(rawText);
-    const validated = validateAndSanitizeReport(parsed, transcript);
-
-    return {
-      status: 200,
-      body: {
-        success: true,
-        data: validated,
-        modelUsed: model,
-      },
-    };
-  } catch (err) {
-    console.error('Error in processReportGeneration:', err);
-    return {
-      status: 200,
-      body: {
-        success: false,
-        fallbackRequired: true,
-        error: `Server exception: ${err.message || 'Unknown processing error'}`,
-      },
-    };
   }
+
+  // If all models failed
+  return {
+    status: 200,
+    body: {
+      success: false,
+      fallbackRequired: true,
+      error: `AI Provider Error: ${lastErrorMessage || 'All available Gemini models failed'}`,
+    },
+  };
 }
 
 function cleanAndParseJSON(text) {
@@ -164,7 +181,7 @@ function cleanAndParseJSON(text) {
 
 function validateAndSanitizeReport(data, originalTranscript) {
   const severities = ['Low', 'Medium', 'High', 'Critical'];
-  const severity = severities.includes(data.severity) ? data.severity : 'Medium';
+  const severity = severities.includes(data.severity) ? data.severity : 'High';
 
   const steps = Array.isArray(data.stepsToReproduce) && data.stepsToReproduce.length > 0
     ? data.stepsToReproduce.map((s) => String(s).trim())
@@ -203,7 +220,7 @@ export default async (req) => {
       JSON.stringify({
         status: 'ok',
         aiConfigured: hasKey,
-        defaultModel: 'gemini-1.5-flash',
+        defaultModel: DEFAULT_MODEL,
         availableModels: ALLOWED_MODELS,
       }),
       {
@@ -253,7 +270,7 @@ export async function handler(event) {
       body: JSON.stringify({
         status: 'ok',
         aiConfigured: hasKey,
-        defaultModel: 'gemini-1.5-flash',
+        defaultModel: DEFAULT_MODEL,
         availableModels: ALLOWED_MODELS,
       }),
     };
