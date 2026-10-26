@@ -1,111 +1,123 @@
 // AI service for Voice QA
-// Supports both Google Gemini API (when configured) and a zero-config smart rule-based Hinglish/English parser
+// Proxies all AI requests securely through the Netlify Serverless Function
+// Maintains the smart rule-based parser as an offline/instant fallback
 
-const SYSTEM_PROMPT = `You are an expert QA Lead and Software Engineer.
-Your task is to analyze a spoken bug description provided by a developer. The input may be in plain English, Hinglish (Hindi-English blend), or colloquial speech.
-Extract the bug details and convert it into a professional, structured bug report and a formal test case in English.
-
-You MUST respond strictly with valid JSON without any markdown formatting or code blocks.
-JSON Schema:
-{
-  "title": "Concise, professional bug title in English (e.g., 'Checkout fails with 500 error when applying coupon')",
-  "severity": "Low" | "Medium" | "High" | "Critical",
-  "component": "Name of the module/area (e.g. 'Checkout', 'Auth', 'Profile', 'UI', 'Payment')",
-  "description": "Clear professional explanation of the defect and its impact on the system",
-  "stepsToReproduce": [
-    "Step 1...",
-    "Step 2...",
-    "Step 3..."
-  ],
-  "expectedResult": "Expected behavior according to specifications",
-  "actualResult": "Observed buggy behavior, crashes, or errors",
-  "testCase": {
-    "id": "TC-MODULE-001",
-    "title": "Formal Test Case Title",
-    "preconditions": "Required initial system state",
-    "testSteps": [
-      "1. Navigate to...",
-      "2. Perform action...",
-      "3. Verify..."
-    ],
-    "expectedOutcome": "What the test should assert",
-    "automationSnippet": "Playwright or Cypress javascript snippet testing this scenario"
+export async function checkBackendAIStatus() {
+  try {
+    const endpoint = typeof window !== 'undefined'
+      ? '/.netlify/functions/generate-report?ping=true'
+      : 'http://localhost:5173/.netlify/functions/generate-report?ping=true';
+    const res = await fetch(endpoint);
+    if (!res.ok) return { online: false, aiConfigured: false };
+    const data = await res.json();
+    return {
+      online: true,
+      aiConfigured: Boolean(data.aiConfigured),
+      defaultModel: data.defaultModel || 'gemini-1.5-flash',
+      availableModels: data.availableModels || ['gemini-1.5-flash', 'gemini-2.0-flash'],
+    };
+  } catch (err) {
+    console.warn('Backend ping failed:', err);
+    return { online: false, aiConfigured: false, error: err.message };
   }
-}`;
+}
 
-export async function generateBugReport(transcript, apiKey) {
+export async function generateBugReport(transcript, selectedModel = 'gemini-1.5-flash') {
   const cleanTranscript = (transcript || '').trim();
   if (!cleanTranscript) {
     throw new Error('Please provide or dictate a bug description first.');
   }
 
-  // If API key is available, call Google Gemini 1.5/2.0 Flash
-  if (apiKey && apiKey.trim().length > 10) {
-    try {
-      const response = await callGeminiAPI(cleanTranscript, apiKey.trim());
-      return response;
-    } catch (err) {
-      console.warn('Gemini API call failed, falling back to smart local parser:', err);
-      // Fallback to local parser if API error occurs so user is never blocked
-      return generateWithLocalParser(cleanTranscript, err.message);
+  // Attempt generation via Netlify Function Backend Proxy
+  try {
+    const endpoint = typeof window !== 'undefined'
+      ? '/.netlify/functions/generate-report'
+      : 'http://localhost:5173/.netlify/functions/generate-report';
+
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        transcript: cleanTranscript,
+        model: selectedModel,
+      }),
+    });
+
+    if (response.ok) {
+      const result = await response.json();
+
+      // If AI succeeded and returned structured report
+      if (result.success && result.data) {
+        const validated = validateStructuredReport(result.data, cleanTranscript);
+        return {
+          ...validated,
+          _source: 'ai',
+          _model: result.modelUsed || selectedModel,
+        };
+      }
+
+      // If backend explicitly told us to fall back (e.g. key missing or AI provider error)
+      if (result.fallbackRequired) {
+        console.info('Backend requested fallback:', result.error);
+        const fallbackReport = generateWithLocalParser(cleanTranscript, result.error);
+        return {
+          ...fallbackReport,
+          _source: 'fallback',
+          _fallbackReason: result.error,
+        };
+      }
     }
+  } catch (netErr) {
+    console.warn('Network call to Netlify function failed, switching to local fallback:', netErr);
   }
 
-  // Zero-config offline smart parser
-  return generateWithLocalParser(cleanTranscript);
+  // Seamless local fallback if backend endpoint was unreachable
+  const localFallback = generateWithLocalParser(cleanTranscript, 'Backend function unreachable');
+  return {
+    ...localFallback,
+    _source: 'fallback',
+    _fallbackReason: 'Backend function unreachable; generated using local smart engine.',
+  };
 }
 
-async function callGeminiAPI(transcript, apiKey) {
-  // Use Gemini 2.5 Flash / 1.5 Flash endpoint
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+// Client-side validation of structured JSON schema (Requirement 4)
+function validateStructuredReport(data, originalTranscript) {
+  if (!data || typeof data !== 'object') {
+    throw new Error('Malformed AI response: expected JSON object.');
+  }
 
-  const payload = {
-    contents: [
-      {
-        role: 'user',
-        parts: [
-          { text: SYSTEM_PROMPT },
-          { text: `Developer Spoken Input:\n"${transcript}"` },
-        ],
-      },
-    ],
-    generationConfig: {
-      temperature: 0.2,
-      responseMimeType: 'application/json',
+  const severities = ['Low', 'Medium', 'High', 'Critical'];
+  const severity = severities.includes(data.severity) ? data.severity : 'Medium';
+
+  const stepsToReproduce = Array.isArray(data.stepsToReproduce) && data.stepsToReproduce.length > 0
+    ? data.stepsToReproduce.map((s) => String(s).trim())
+    : ['1. Perform the user interaction described in the bug scenario.'];
+
+  const testSteps = Array.isArray(data.testCase?.testSteps) && data.testCase.testSteps.length > 0
+    ? data.testCase.testSteps.map((s) => String(s).trim())
+    : stepsToReproduce;
+
+  return {
+    title: String(data.title || 'Untitled Defect').trim(),
+    severity,
+    component: String(data.component || 'General').trim(),
+    description: String(data.description || originalTranscript).trim(),
+    stepsToReproduce,
+    expectedResult: String(data.expectedResult || 'Expected operation to succeed without error.').trim(),
+    actualResult: String(data.actualResult || 'Defect occurred as described.').trim(),
+    testCase: {
+      id: String(data.testCase?.id || `TC-GEN-${Math.floor(100 + Math.random() * 900)}`).trim(),
+      title: String(data.testCase?.title || `Verify ${data.title || 'reported defect fix'}`).trim(),
+      preconditions: String(data.testCase?.preconditions || 'User authenticated and system operational.').trim(),
+      testSteps,
+      expectedOutcome: String(data.testCase?.expectedOutcome || data.expectedResult || 'Assertion passes.').trim(),
+      automationSnippet: String(data.testCase?.automationSnippet || '// Playwright test script').trim(),
     },
   };
-
-  const res = await fetch(endpoint, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
-
-  if (!res.ok) {
-    const errorData = await res.json().catch(() => ({}));
-    const message = errorData.error?.message || `API request failed with status ${res.status}`;
-    throw new Error(message);
-  }
-
-  const data = await res.json();
-  const textOutput = data.candidates?.[0]?.content?.parts?.[0]?.text;
-
-  if (!textOutput) {
-    throw new Error('Received empty response from Gemini API.');
-  }
-
-  // Parse JSON output
-  try {
-    const cleaned = textOutput.replace(/```json/gi, '').replace(/```/g, '').trim();
-    return JSON.parse(cleaned);
-  } catch {
-    console.error('Failed to parse Gemini JSON output:', textOutput);
-    throw new Error('Failed to parse AI response into structured JSON format.');
-  }
 }
 
-// Smart zero-config Hinglish & English local QA parser
-function generateWithLocalParser(rawText, fallbackNotice = null) {
+// Smart zero-config Hinglish & English local QA fallback parser
+export function generateWithLocalParser(rawText, fallbackNotice = null) {
   const text = rawText.toLowerCase();
 
   // Detect component
@@ -171,7 +183,6 @@ function generateWithLocalParser(rawText, fallbackNotice = null) {
   }
   steps.push('Observe the resulting application behavior and console logs.');
 
-  // Generate automated test snippet (Playwright)
   const testId = `TC-${component.replace(/[^A-Z]/g, '').slice(0, 4) || 'GEN'}-${Math.floor(100 + Math.random() * 900)}`;
   const cleanTitle = generateCleanTitle(rawText, component);
 
@@ -180,7 +191,6 @@ function generateWithLocalParser(rawText, fallbackNotice = null) {
   await page.goto('/${component.toLowerCase().replace(/\s+/g, '-')}');
 
   // 2. Act: Replicate developer spoken steps
-  // e.g., click target elements
   await page.getByRole('button', { name: /submit|apply|checkout/i }).click();
 
   // 3. Assert: Verify bug does not reoccur
@@ -192,8 +202,8 @@ function generateWithLocalParser(rawText, fallbackNotice = null) {
     title: cleanTitle,
     severity,
     component,
-    description: `Voice QA defect identified in [${component}]: User reported: "${rawText}". ${
-      fallbackNotice ? `(Note: Parsed in offline smart mode. Configure Gemini API key in settings for custom AI generation).` : ''
+    description: `Defect identified in [${component}]: User reported: "${rawText}".${
+      fallbackNotice ? ` (Notice: ${fallbackNotice})` : ''
     }`,
     stepsToReproduce: steps,
     expectedResult: expectedBehavior,
@@ -210,7 +220,6 @@ function generateWithLocalParser(rawText, fallbackNotice = null) {
 }
 
 function generateCleanTitle(rawText, component) {
-  // Extract key keywords to build a concise title
   const words = rawText.split(/\s+/).slice(0, 10).join(' ');
   if (/500|internal server/i.test(rawText)) {
     return `${component}: Returns HTTP 500 error during transaction`;

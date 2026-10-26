@@ -30,9 +30,12 @@ When testing or dogfooding, developers naturally explain bugs verbally—often i
 
 - **No Chatbot Gimmicks**: Designed as a sleek, professional developer workbench (Linear / Raycast aesthetic), not an AI chatbot.
 - **Hinglish & English Native**: Understands colloquial developer expressions (*"click kiya"*, *"screen freeze ho gayi"*, *"loader ghoom raha hai"*).
+- **Secure Serverless Proxy (Netlify Functions)**:
+  - **Zero Client Exposure**: The API key is stored strictly on the server side (`process.env.GEMINI_API_KEY`). It is **never** bundled into frontend code or stored in browser storage.
+  - Built-in validation checks every AI response before returning it to the UI.
 - **Dual Engine Architecture**:
-  - **Zero-Config Smart Mode**: Works out of the box with zero setup using an intelligent rule and pattern extraction engine.
-  - **Gemini AI Engine**: Connect your Google Gemini API key in settings for deep semantic understanding.
+  - **Gemini AI Engine**: Powered by Google Gemini 1.5 Flash (or 2.0 Flash) through a secure Netlify backend function.
+  - **Zero-Config Smart Fallback**: If the backend key is not configured or an API error occurs, Voice QA seamlessly falls back to an intelligent local heuristic parser so developers are never blocked.
 - **Hands-Free Dictation**:
   - Full compatibility with **Wispr Flow** desktop dictation.
   - Native Web Speech API with language toggles (`en-IN`, `en-US`, `hi-IN`).
@@ -47,11 +50,69 @@ When testing or dogfooding, developers naturally explain bugs verbally—often i
 
 ## 🛠️ Tech Stack & Architecture
 
-- **Frontend**: React 19 + Vite 8
-- **Icons**: Lucide React
-- **Voice Input**: Web Speech API (`webkitSpeechRecognition`) + Wispr Flow input focus
-- **AI / Parsing Service**: Modular hybrid service (Google Gemini 1.5/2.0 Flash + intelligent local fallback parser)
-- **Persistence**: Browser `localStorage` (reports and preferences)
+```
+┌────────────────────────────────────────────────────────┐
+│                   BROWSER (CLIENT)                     │
+│  • React 19 + Vite 8 UI (Workbench Studio)             │
+│  • Web Speech API (en-IN/US) + Wispr Flow input focus  │
+│  • Local History & Preferences (localStorage)          │
+└───────────────────────────┬────────────────────────────┘
+                            │ POST /.netlify/functions/generate-report
+                            ▼
+┌────────────────────────────────────────────────────────┐
+│            NETLIFY SERVERLESS FUNCTION                 │
+│  • Path: netlify/functions/generate-report.js          │
+│  • Reads: process.env.GEMINI_API_KEY                   │
+│  • Translates Hinglish to professional technical QA    │
+│  • Enforces & validates strict JSON schema             │
+└───────────────────────────┬────────────────────────────┘
+                            │ HTTPS (Secure Backend Call)
+                            ▼
+┌────────────────────────────────────────────────────────┐
+│             GOOGLE GEMINI 1.5 FLASH API                │
+│  • Generative AI Multilingual & Code Generation        │
+└────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 🔑 AI Provider & Free API Key Setup
+
+Voice QA uses **Google Gemini 1.5 Flash** (with support for **Gemini 2.0 Flash**):
+- **Requires Paid Account?**: **NO.** Google AI Studio provides a free tier with 15 requests per minute, 1,500 requests per day, and 1 million tokens/min without entering credit card details.
+- **Get your Free Key**: [https://aistudio.google.com/](https://aistudio.google.com/)
+
+---
+
+## ⚙️ How to Configure the API Key
+
+### A. For Local Development
+1. Create a `.env` file in the `voiceqa` directory (copied from `.env.example`):
+   ```bash
+   GEMINI_API_KEY=AIzaSyYourActualGeminiKeyHere
+   ```
+2. Start the Vite dev server:
+   ```bash
+   npm run dev
+   ```
+   *The Vite dev server automatically proxies `/.netlify/functions/generate-report` with your `.env` key locally.*
+
+### B. For Netlify Deployment
+1. Push your repository to GitHub / GitLab.
+2. In the [Netlify Dashboard](https://app.netlify.com/):
+   - Click **Add new site** > **Import an existing project**.
+   - Select your repository.
+   - Build Settings (pre-configured via `netlify.toml`):
+     - **Base directory**: `voiceqa` (or project root if repo is at root)
+     - **Build command**: `npm run build`
+     - **Publish directory**: `dist`
+     - **Functions directory**: `netlify/functions`
+3. Add Environment Variable:
+   - Go to **Site configuration** > **Environment variables**.
+   - Add a new variable:
+     - **Key**: `GEMINI_API_KEY`
+     - **Value**: `AIzaSyYourActualGeminiKeyHere`
+4. Click **Deploy**. Your app and secure serverless function are live!
 
 ---
 
@@ -64,30 +125,24 @@ When testing or dogfooding, developers naturally explain bugs verbally—often i
 
 ---
 
-## ⚙️ Manual Configuration Guide
+## 🧪 Testing the Integration
 
-1. **Microphone Permission**:
-   - When you click the microphone button for the first time, allow browser microphone access.
-2. **Wispr Flow Users**:
-   - If using the Wispr Flow app, simply place your cursor in the **Spoken Transcript** box and dictate using your Wispr Flow shortcut.
-3. **Google Gemini API Key (Optional)**:
-   - Click the **Gear icon (⚙️)** in the top right.
-   - Enter your Google Gemini API key.
-   - *Note:* If left blank, Voice QA runs seamlessly in offline **Zero-Config Smart Mode**.
-
----
-
-## 🏃 Running Locally
+To verify that the Netlify function endpoint and client fallback are functioning properly:
 
 ```bash
-# Navigate to project directory
 cd voiceqa
-
-# Install dependencies
-npm install
-
-# Start development server
-npm run dev
+npm run test:integration
 ```
-
-Dev server will be available at: `http://localhost:5173/`
+Expected output:
+```
+--- Test 1: Testing missing transcript (400 validation) ---
+Result 1 status: 400 body: { success: false, error: 'Voice transcript cannot be empty.' }
+--- Test 2: Testing unconfigured backend key (graceful fallback signal) ---
+Result 2 status: 200 fallbackRequired: true
+--- Test 3: Testing HTTP endpoint via running Vite dev server ---
+Ping endpoint response: { status: 'ok', ... }
+--- Test 4: Testing POST request via running Vite dev server ---
+POST endpoint response: { success: false, fallbackRequired: true, ... }
+--- Test 5: Testing Frontend aiService.js end-to-end ---
+✅ All integration tests passed successfully!
+```

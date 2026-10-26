@@ -1,4 +1,5 @@
 // Local storage service for Voice QA reports and user preferences
+// Note: API keys are NEVER stored here to ensure strict security.
 
 const STORAGE_KEYS = {
   REPORTS: 'voiceqa_saved_reports_v1',
@@ -6,8 +7,7 @@ const STORAGE_KEYS = {
 };
 
 export const defaultSettings = {
-  apiKey: '',
-  aiProvider: 'gemini', // 'gemini' | 'mock'
+  model: 'gemini-1.5-flash', // 'gemini-1.5-flash' | 'gemini-2.0-flash' | 'gemini-1.5-pro'
   language: 'en-IN', // 'en-IN' | 'en-US' | 'hi-IN'
   autoGenerateOnStop: false,
 };
@@ -65,7 +65,13 @@ export function deleteReport(id) {
 export function getSettings() {
   try {
     const raw = localStorage.getItem(STORAGE_KEYS.SETTINGS);
-    return raw ? { ...defaultSettings, ...JSON.parse(raw) } : defaultSettings;
+    if (!raw) return defaultSettings;
+    const parsed = JSON.parse(raw);
+    // Explicitly delete any legacy client-side apiKey to preserve security
+    if ('apiKey' in parsed) {
+      delete parsed.apiKey;
+    }
+    return { ...defaultSettings, ...parsed };
   } catch (err) {
     console.error('Failed to read settings:', err);
     return defaultSettings;
@@ -74,9 +80,12 @@ export function getSettings() {
 
 export function saveSettings(settings) {
   try {
-    const merged = { ...defaultSettings, ...settings };
-    localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(merged));
-    return merged;
+    const sanitized = { ...defaultSettings, ...settings };
+    if ('apiKey' in sanitized) {
+      delete sanitized.apiKey;
+    }
+    localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(sanitized));
+    return sanitized;
   } catch (err) {
     console.error('Failed to save settings:', err);
     return defaultSettings;

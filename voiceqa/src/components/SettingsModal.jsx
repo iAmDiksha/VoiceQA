@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
-import { X, Key, Check, Info } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { X, Cpu, Check, ShieldCheck, RefreshCw, AlertTriangle } from 'lucide-react';
+import { checkBackendAIStatus } from '../services/aiService';
 
 export default function SettingsModal({
   isOpen,
@@ -7,10 +8,32 @@ export default function SettingsModal({
   settings,
   onSaveSettings,
 }) {
-  const [apiKey, setApiKey] = useState(settings?.apiKey || '');
+  const [model, setModel] = useState(settings?.model || 'gemini-1.5-flash');
   const [language, setLanguage] = useState(settings?.language || 'en-IN');
-  const [showKey, setShowKey] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
+  const [backendStatus, setBackendStatus] = useState(null);
+  const [isTesting, setIsTesting] = useState(false);
+
+  const handleTestConnection = async () => {
+    setIsTesting(true);
+    const status = await checkBackendAIStatus();
+    setBackendStatus(status);
+    setIsTesting(false);
+  };
+
+  useEffect(() => {
+    let active = true;
+    if (isOpen) {
+      checkBackendAIStatus().then((status) => {
+        if (active) {
+          setBackendStatus(status);
+        }
+      });
+    }
+    return () => {
+      active = false;
+    };
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -18,7 +41,7 @@ export default function SettingsModal({
     e.preventDefault();
     onSaveSettings({
       ...settings,
-      apiKey: apiKey.trim(),
+      model,
       language,
     });
     setSavedSuccess(true);
@@ -33,8 +56,8 @@ export default function SettingsModal({
       <div className="modal-card" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <div className="modal-title-row">
-            <Key size={18} className="text-accent" />
-            <h3 className="modal-title">Voice QA Engine Settings</h3>
+            <Cpu size={18} className="text-accent" />
+            <h3 className="modal-title">AI Engine & Environment Settings</h3>
           </div>
           <button
             type="button"
@@ -47,41 +70,82 @@ export default function SettingsModal({
         </div>
 
         <form onSubmit={handleSave} className="modal-body">
-          {/* Info notice about zero-config mode */}
-          <div className="settings-notice">
-            <Info size={16} className="text-accent flex-shrink-0" />
-            <p>
-              <strong>Zero-Config Smart Mode:</strong> If no API key is provided, Voice QA automatically
-              uses its built-in rule and semantic parser for instant English & Hinglish parsing without any configuration.
+          {/* Security & Netlify status notice */}
+          <div className="settings-notice security-notice">
+            <ShieldCheck size={18} className="text-success flex-shrink-0" />
+            <div className="notice-body">
+              <strong>Secure Backend Proxy (Netlify Functions)</strong>
+              <p>
+                API keys are never stored in your browser or exposed to client-side code.
+                All AI calls are securely proxied via Netlify serverless functions.
+              </p>
+            </div>
+          </div>
+
+          {/* Backend Connection Health Check */}
+          <div className="backend-status-card">
+            <div className="backend-status-header">
+              <span className="field-label">Backend Function Status</span>
+              <button
+                type="button"
+                className="btn-text-sm"
+                onClick={handleTestConnection}
+                disabled={isTesting}
+              >
+                <RefreshCw size={12} className={isTesting ? 'spinning' : ''} />
+                <span>{isTesting ? 'Checking...' : 'Check Connection'}</span>
+              </button>
+            </div>
+
+            <div className="backend-status-content">
+              {backendStatus ? (
+                backendStatus.online ? (
+                  backendStatus.aiConfigured ? (
+                    <div className="status-pill status-pill-success">
+                      <Check size={14} />
+                      <span>Netlify Function Active · GEMINI_API_KEY Configured</span>
+                    </div>
+                  ) : (
+                    <div className="status-pill status-pill-warning">
+                      <AlertTriangle size={14} />
+                      <span>Netlify Function Active · Running in Fallback Mode (GEMINI_API_KEY not set)</span>
+                    </div>
+                  )
+                ) : (
+                  <div className="status-pill status-pill-warning">
+                    <AlertTriangle size={14} />
+                    <span>Backend offline: local rule-based engine will be used</span>
+                  </div>
+                )
+              ) : (
+                <div className="status-pill status-pill-neutral">Checking backend...</div>
+              )}
+            </div>
+
+            <p className="field-hint">
+              To activate Gemini AI: add <code>GEMINI_API_KEY</code> in Netlify Environment Variables
+              (or in local <code>.env</code>).
             </p>
           </div>
 
-          {/* Gemini API Key */}
+          {/* AI Model Selection */}
           <div className="field-group">
-            <label className="field-label">Google Gemini API Key (Optional)</label>
-            <div className="input-password-wrapper">
-              <input
-                type={showKey ? 'text' : 'password'}
-                className="input-key"
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                placeholder="AIzaSy..."
-                autoComplete="off"
-              />
-              <button
-                type="button"
-                className="btn-toggle-key"
-                onClick={() => setShowKey(!showKey)}
-              >
-                {showKey ? 'Hide' : 'Show'}
-              </button>
-            </div>
+            <label className="field-label">AI Model</label>
+            <select
+              className="select-lang-full"
+              value={model}
+              onChange={(e) => setModel(e.target.value)}
+            >
+              <option value="gemini-1.5-flash">Gemini 1.5 Flash (Fast, Free Tier, Recommended)</option>
+              <option value="gemini-2.0-flash">Gemini 2.0 Flash (Latest Next-Gen Generation)</option>
+              <option value="gemini-1.5-pro">Gemini 1.5 Pro (Deep Reasoning for Complex Cases)</option>
+            </select>
             <span className="field-hint">
-              Stored securely in your browser's localStorage. Never sent to any third party.
+              Free API keys with generous limits can be obtained at <a href="https://aistudio.google.com/" target="_blank" rel="noreferrer" className="link-text">Google AI Studio</a>.
             </span>
           </div>
 
-          {/* Speech Language */}
+          {/* Speech Language Dialect */}
           <div className="field-group">
             <label className="field-label">Primary Speech Recognition Dialect</label>
             <select

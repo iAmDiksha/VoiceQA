@@ -572,6 +572,36 @@
   gap: 10px;
 }
 
+.topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.engine-badge {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 4px 9px;
+  border-radius: 20px;
+}
+
+.badge-ai {
+  background-color: rgba(139, 92, 246, 0.15);
+  border: 1px solid rgba(139, 92, 246, 0.4);
+  color: var(--accent-light);
+  box-shadow: 0 0 10px rgba(139, 92, 246, 0.2);
+}
+
+.badge-fallback {
+  background-color: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  color: var(--warning);
+}
+
 .tab-pill-group {
   display: flex;
   align-items: center;
@@ -1161,29 +1191,76 @@
   color: var(--accent-light);
 }
 
-.input-password-wrapper {
+.security-notice {
+  background-color: rgba(16, 185, 129, 0.1);
+  border-color: rgba(16, 185, 129, 0.3);
+}
+
+.notice-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.notice-body strong {
+  color: var(--success);
+}
+
+.backend-status-card {
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.backend-status-header {
   display: flex;
   align-items: center;
-  position: relative;
+  justify-content: space-between;
 }
 
-.input-key {
+.backend-status-content {
+  display: flex;
+  align-items: center;
+}
+
+.status-pill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  font-weight: 500;
+  padding: 5px 10px;
+  border-radius: var(--radius-sm);
   width: 100%;
-  padding-right: 60px;
-  font-family: var(--font-mono);
-  font-size: 0.82rem;
 }
 
-.btn-toggle-key {
-  position: absolute;
-  right: 8px;
-  font-size: 0.72rem;
-  color: var(--text-muted);
-  padding: 3px 6px;
-  border-radius: 4px;
+.status-pill-success {
+  background-color: var(--success-bg);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  color: var(--success);
 }
-.btn-toggle-key:hover {
-  color: var(--text-main);
+
+.status-pill-warning {
+  background-color: var(--warning-bg);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  color: var(--warning);
+}
+
+.status-pill-neutral {
+  background-color: var(--bg-surface-subtle);
+  color: var(--text-muted);
+}
+
+.spinning {
+  animation: spin 0.8s linear infinite;
+}
+
+.link-text {
+  color: var(--accent-light);
+  text-decoration: underline;
 }
 
 .field-hint {

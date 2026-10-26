@@ -99,16 +99,20 @@ export default function App() {
     setIsSaved(false);
 
     try {
-      const generated = await generateBugReport(transcript, settings.apiKey);
+      const generated = await generateBugReport(transcript, settings.model || 'gemini-1.5-flash');
       setReport(generated);
-      showToast('Bug report & test case generated successfully!');
+      if (generated._source === 'ai') {
+        showToast(`✨ Generated with Gemini AI (${generated._model || '1.5 Flash'})!`);
+      } else {
+        showToast('⚡ Generated with Smart Fallback Engine (Backend API key not configured)');
+      }
     } catch (err) {
       console.error('Generation failed:', err);
       showToast(`Error: ${err.message || 'Failed to generate report'}`);
     } finally {
       setIsGenerating(false);
     }
-  }, [transcript, isListening, settings.apiKey, showToast]);
+  }, [transcript, isListening, settings.model, showToast]);
 
   // Keyboard Shortcuts: Ctrl+Enter to generate, Space to toggle mic (when not in text input)
   useEffect(() => {
