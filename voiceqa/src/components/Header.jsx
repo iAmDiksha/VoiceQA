@@ -20,9 +20,7 @@ export default function Header({
             <h1 className="brand-title">Voice QA</h1>
             <span className="badge-track">Builder Track</span>
           </div>
-          <p className="brand-subtitle">
-            Voice-to-Bug & Test Case Studio <span className="text-dim">· Wemakedevs × Wispr Flow</span>
-          </p>
+          <p className="brand-subtitle">Voice-to-Bug & Test Case Studio</p>
         </div>
       </div>
 
